@@ -1,0 +1,71 @@
+library(RSQLite)
+
+# Función para extraer series temporales para un subid dado, ajustar fechas y guardar como CSV
+extract_and_save_timeseries <- function(db_path, subid, output_dir) {
+  # Conectar a la base de datos SQLite
+  con <- dbConnect(SQLite(), dbname = db_path)
+  
+  # Verificar que la conexión fue exitosa
+  if (!dbIsValid(con)) {
+    stop("No se pudo conectar a la base de datos.")
+  }
+  
+  # Obtener la lista de tablas en la base de datos
+  tables_in_db <- dbListTables(con)
+  if (length(tables_in_db) == 0) {
+    message("No se encontraron tablas en la base de datos.")
+    dbDisconnect(con)
+    return()
+  }
+  
+  # Asegurar que el directorio de salida existe
+  if (!dir.exists(output_dir)) {
+    dir.create(output_dir, showWarnings = TRUE)
+  }
+  
+  # Iterar sobre cada tabla, extraer datos para el subid dado, ajustar fechas y guardar en CSV
+  for (table in tables_in_db) {
+    message(paste("Procesando tabla:", table))
+    
+    # Consulta SQL para seleccionar filas del subid especificado
+    query <- paste0("SELECT * FROM ", table, " WHERE subid = ", subid)
+    
+    # Ejecutar la consulta
+    result <- dbGetQuery(con, query)
+    
+    # Ajustar fechas si se recuperaron filas
+    if (nrow(result) > 0) {
+      # Crear una secuencia de fechas comenzando desde 2006-01-01
+      start_date <- as.Date("2006-01-01")
+      end_date <- start_date + (nrow(result) - 1)
+      date_seq <- seq(from = start_date, to = end_date, by = "day")
+      
+      # Actualizar la columna DATE si existe, o agregarla si no existe
+      if ("DATE" %in% colnames(result)) {
+        result$DATE <- date_seq
+      } else {
+        result <- cbind(DATE = date_seq, result)
+      }
+      
+      # Definir el nombre del archivo CSV de salida
+      csv_file_name <- file.path(output_dir, paste0(table, "_subid_", subid, ".csv"))
+      
+      # Guardar los datos en el archivo CSV
+      write.csv(result, file = csv_file_name, row.names = FALSE)
+      message(paste("Guardado:", csv_file_name))
+    } else {
+      message(paste("No se encontraron datos para subid", subid, "en la tabla", table))
+    }
+  }
+  
+  # Desconectar de la base de datos
+  dbDisconnect(con)
+  
+  message("Extracción y guardado completados.")
+}
+
+# Ejemplo de uso
+db_path <- "Data45_2.sqlite"           # Ruta a la base de datos SQLite
+output_dir <- "output_data/"          # Directorio de salida para los archivos CSV
+subid <- 605                           # Subid a extraer
+extract_and_save_timeseries(db_path, subid, output_dir)
